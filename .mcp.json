@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "pg-mcp": {
-      "type": "sse",
-      "url": "${PG_MCP_SERVER_URL}/sse"
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "${PG_MCP_SERVER_URL}/mcp"
+      ]
     }
   }
 }
