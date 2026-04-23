@@ -1,7 +1,7 @@
 """
 PostgreSQL MCP Server with OAuth 2.1 (PKCE)
 ===========================================
-Transport : SSE (Server-Sent Events)
+Transport : SSE (legacy) + StreamableHTTP /mcp (MCP 2025-03-26)
 Auth      : OAuth 2.1 + PKCE — built-in authorization server
 Spec      : MCP 2025-03-26
 """
@@ -25,6 +25,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from pydantic_settings import BaseSettings
+
+# StreamableHTTP transport (MCP 2025-03-26, preferred by Claude Desktop)
+try:
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    _HAS_HTTP_TRANSPORT = True
+except ImportError:
+    _HAS_HTTP_TRANSPORT = False
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pg-mcp")
@@ -437,9 +444,10 @@ async def _list_schemas() -> list[types.TextContent]:
     return [types.TextContent(type="text", text="\n".join(r["schema_name"] for r in rows) or "No schemas found")]
 
 
-# ── SSE transport + auth guard ─────────────────────────────────────────────────
+# ── Transports ────────────────────────────────────────────────────────────────
 
 sse_transport = SseServerTransport("/messages/")
+http_transport = StreamableHTTPServerTransport(path="/mcp") if _HAS_HTTP_TRANSPORT else None
 
 def _bearer_valid(request: Request) -> bool:
     auth = request.headers.get("Authorization", "")
@@ -475,6 +483,20 @@ async def messages_endpoint(request: Request):
     if not _bearer_valid(request):
         return _unauthorized()
     await sse_transport.handle_post_message(request.scope, request.receive, request._send)
+
+
+# ── StreamableHTTP transport (MCP 2025-03-26) ─────────────────────────────────
+
+@app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
+async def mcp_http_endpoint(request: Request):
+    if not _bearer_valid(request):
+        return _unauthorized()
+    if not _HAS_HTTP_TRANSPORT or http_transport is None:
+        return JSONResponse({"error": "StreamableHTTP not available"}, status_code=501)
+    async with http_transport.connect(
+        request.scope, request.receive, request._send
+    ) as (read_stream, write_stream):
+        await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
