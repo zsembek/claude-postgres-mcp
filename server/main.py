@@ -460,11 +460,14 @@ def _bearer_valid(request: Request) -> bool:
 
 def _unauthorized() -> Response:
     base = settings.server_url.rstrip("/")
+    # MCP 2025-03-26 / RFC 9728: resource_metadata MUST be inside WWW-Authenticate
     return Response(
         status_code=401,
         headers={
-            "WWW-Authenticate": f'Bearer realm="{base}"',
-            "Link": f'<{base}/.well-known/oauth-protected-resource>; rel="oauth-protected-resource"',
+            "WWW-Authenticate": (
+                f'Bearer realm="{base}", '
+                f'resource_metadata="{base}/.well-known/oauth-protected-resource"'
+            ),
         },
     )
 
