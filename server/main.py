@@ -514,17 +514,60 @@ async def messages_endpoint(request: Request):
 
 
 # ── StreamableHTTP transport (MCP 2025-03-26) ─────────────────────────────────
+# Session manager is mounted as a raw ASGI app (not a FastAPI route) because it
+# owns the entire response lifecycle. Wrapping it in a FastAPI handler caused
+# "Unexpected ASGI message 'http.response.start' sent, after response already
+# completed." — FastAPI was appending its own response after the manager's.
 
-@app.api_route("/v2/mcp", methods=["GET", "POST", "DELETE"])
-@app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
-async def mcp_http_endpoint(request: Request):
-    if not _bearer_valid(request):
-        return _unauthorized()
+async def _send_401_asgi(send) -> None:
+    base = settings.server_url.rstrip("/")
+    www_auth = (
+        f'Bearer realm="{base}", '
+        f'resource_metadata="{base}/.well-known/oauth-protected-resource"'
+    ).encode()
+    await send({
+        "type": "http.response.start",
+        "status": 401,
+        "headers": [
+            (b"www-authenticate", www_auth),
+            (b"content-length", b"0"),
+        ],
+    })
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+async def _send_503_asgi(send, reason: bytes = b"StreamableHTTP not available") -> None:
+    await send({
+        "type": "http.response.start",
+        "status": 503,
+        "headers": [(b"content-type", b"text/plain"), (b"content-length", str(len(reason)).encode())],
+    })
+    await send({"type": "http.response.body", "body": reason, "more_body": False})
+
+async def mcp_asgi_app(scope, receive, send):
+    if scope["type"] != "http":
+        return
     if not _HAS_HTTP_TRANSPORT or http_session_manager is None:
-        return JSONResponse({"error": "StreamableHTTP not available"}, status_code=501)
-    await http_session_manager.handle_request(
-        request.scope, request.receive, request._send
-    )
+        await _send_503_asgi(send)
+        return
+    # Bearer check — we can't reuse _bearer_valid because it wants a Request object
+    auth = ""
+    for name, value in scope.get("headers", []):
+        if name == b"authorization":
+            auth = value.decode("latin-1")
+            break
+    if not auth.startswith("Bearer "):
+        await _send_401_asgi(send)
+        return
+    try:
+        verify_token(auth[7:])
+    except Exception:
+        await _send_401_asgi(send)
+        return
+    await http_session_manager.handle_request(scope, receive, send)
+
+# Mount at both /mcp and /v2/mcp
+app.mount("/mcp", mcp_asgi_app)
+app.mount("/v2/mcp", mcp_asgi_app)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
