@@ -447,10 +447,6 @@ async def _list_schemas() -> list[types.TextContent]:
 # ── Transports ────────────────────────────────────────────────────────────────
 
 sse_transport = SseServerTransport("/messages/")
-http_transport = (
-    StreamableHTTPServerTransport(mcp_session_id=lambda: secrets.token_urlsafe(16))
-    if _HAS_HTTP_TRANSPORT else None
-)
 
 def _bearer_valid(request: Request) -> bool:
     auth = request.headers.get("Authorization", "")
@@ -494,9 +490,10 @@ async def messages_endpoint(request: Request):
 async def mcp_http_endpoint(request: Request):
     if not _bearer_valid(request):
         return _unauthorized()
-    if not _HAS_HTTP_TRANSPORT or http_transport is None:
+    if not _HAS_HTTP_TRANSPORT:
         return JSONResponse({"error": "StreamableHTTP not available"}, status_code=501)
-    async with http_transport.connect(
+    transport = StreamableHTTPServerTransport(mcp_session_id=secrets.token_hex(16))
+    async with transport.connect(
         request.scope, request.receive, request._send
     ) as (read_stream, write_stream):
         await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
