@@ -1,9 +1,19 @@
 services:
   pg-mcp:
     build: .
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - .env
     restart: unless-stopped
-    # Run behind nginx with TLS — see README for nginx snippet
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "19000:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - pg-mcp
+    restart: unless-stopped
