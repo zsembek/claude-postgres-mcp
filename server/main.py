@@ -447,7 +447,10 @@ async def _list_schemas() -> list[types.TextContent]:
 # ── Transports ────────────────────────────────────────────────────────────────
 
 sse_transport = SseServerTransport("/messages/")
-http_transport = StreamableHTTPServerTransport() if _HAS_HTTP_TRANSPORT else None
+http_transport = (
+    StreamableHTTPServerTransport(mcp_session_id=lambda: secrets.token_urlsafe(16))
+    if _HAS_HTTP_TRANSPORT else None
+)
 
 def _bearer_valid(request: Request) -> bool:
     auth = request.headers.get("Authorization", "")
