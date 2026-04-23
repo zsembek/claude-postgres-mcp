@@ -188,14 +188,23 @@ async def oauth_resource_metadata():
 @app.post("/oauth/register")
 async def oauth_register(request: Request):
     body = await request.json()
-    return JSONResponse({
-        "client_id": f"client_{secrets.token_urlsafe(12)}",
-        "client_name": body.get("client_name", "Claude Code"),
+    log.info("DCR request body: %s", body)
+    client_id = f"client_{secrets.token_urlsafe(12)}"
+    now = int(time.time())
+    response = {
+        "client_id": client_id,
+        "client_id_issued_at": now,
+        "client_secret_expires_at": 0,
+        "client_name": body.get("client_name", "Claude"),
         "redirect_uris": body.get("redirect_uris", []),
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "token_endpoint_auth_method": "none",
-    })
+        "grant_types": body.get("grant_types", ["authorization_code", "refresh_token"]),
+        "response_types": body.get("response_types", ["code"]),
+        "token_endpoint_auth_method": body.get("token_endpoint_auth_method", "none"),
+        "scope": body.get("scope", "mcp:read"),
+        "application_type": body.get("application_type", "web"),
+    }
+    log.info("DCR response: %s", response)
+    return JSONResponse(response)
 
 
 # ── Authorization endpoint ─────────────────────────────────────────────────────
