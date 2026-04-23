@@ -1,0 +1,10 @@
+{
+  "name": "pg-mcp",
+  "version": "0.1.0",
+  "description": "PostgreSQL MCP server with OAuth 2.1 PKCE authorization for read-only database access",
+  "author": {
+    "name": "RG Brands Kazakhstan"
+  },
+  "keywords": ["postgres", "postgresql", "database", "sql", "mcp", "oauth"],
+  "mcpServers": "./.mcp.json"
+}

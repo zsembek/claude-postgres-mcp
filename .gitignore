@@ -1,0 +1,6 @@
+.env
+*.plugin
+.claude/
+__pycache__/
+*.pyc
+.venv/
