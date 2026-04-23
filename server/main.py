@@ -498,6 +498,7 @@ async def messages_endpoint(request: Request):
 
 # ── StreamableHTTP transport (MCP 2025-03-26) ─────────────────────────────────
 
+@app.api_route("/v2/mcp", methods=["GET", "POST", "DELETE"])
 @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
 async def mcp_http_endpoint(request: Request):
     if not _bearer_valid(request):
