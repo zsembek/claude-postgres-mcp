@@ -26,9 +26,9 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from pydantic_settings import BaseSettings
 
-# StreamableHTTP transport (MCP 2025-03-26, preferred by Claude Desktop)
+# StreamableHTTP transport (MCP 2025-03-26, preferred by Claude Code)
 try:
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     _HAS_HTTP_TRANSPORT = True
 except ImportError:
     _HAS_HTTP_TRANSPORT = False
@@ -140,7 +140,14 @@ async def lifespan(app: FastAPI):
     )
     log.info("✓ Database pool ready")
     log.info("Admin token: %s", settings.admin_token)
-    yield
+
+    # Start StreamableHTTP session manager lifecycle
+    if _HAS_HTTP_TRANSPORT:
+        async with http_session_manager.run():
+            log.info("✓ StreamableHTTP session manager ready")
+            yield
+    else:
+        yield
     await _db_pool.close()
 
 
@@ -457,6 +464,16 @@ async def _list_schemas() -> list[types.TextContent]:
 
 sse_transport = SseServerTransport("/messages/")
 
+if _HAS_HTTP_TRANSPORT:
+    http_session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        event_store=None,
+        json_response=False,
+        stateless=False,
+    )
+else:
+    http_session_manager = None
+
 def _bearer_valid(request: Request) -> bool:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -503,13 +520,11 @@ async def messages_endpoint(request: Request):
 async def mcp_http_endpoint(request: Request):
     if not _bearer_valid(request):
         return _unauthorized()
-    if not _HAS_HTTP_TRANSPORT:
+    if not _HAS_HTTP_TRANSPORT or http_session_manager is None:
         return JSONResponse({"error": "StreamableHTTP not available"}, status_code=501)
-    transport = StreamableHTTPServerTransport(mcp_session_id=secrets.token_hex(16))
-    async with transport.connect(
+    await http_session_manager.handle_request(
         request.scope, request.receive, request._send
-    ) as (read_stream, write_stream):
-        await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
+    )
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
